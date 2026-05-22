@@ -27,10 +27,11 @@ class OpenCodeProvisioner:
         task_id: str | None = None,
         context_id: str | None = None,
         user_message: dict[str, Any] | None = None,
+        opencode_session_id: str | None = None,
     ) -> A2ARunResponse:
         if not request.query:
             raise ValueError("A2A run requires query")
-        response = self.provision(request)
+        response = self.provision(request, opencode_session_id=opencode_session_id)
         task, events = build_a2a_task(
             response=response,
             query=request.query,
@@ -40,7 +41,12 @@ class OpenCodeProvisioner:
         )
         return A2ARunResponse(task=task, events=events, provision=response)
 
-    def provision(self, request: ProvisionRequest) -> ProvisionResponse:
+    def provision(
+        self,
+        request: ProvisionRequest,
+        *,
+        opencode_session_id: str | None = None,
+    ) -> ProvisionResponse:
         home_dir = self.session.home_dir
         artifacts = build_file_artifacts(request, home_dir)
         self.session.write_files(artifacts)
@@ -81,9 +87,10 @@ class OpenCodeProvisioner:
         if request.query:
             if not request.provider:
                 raise ValueError("query requires provider configuration")
+            session_args = f" --session {shlex.quote(opencode_session_id)}" if opencode_session_id else ""
             query_cmd = (
-                f"opencode run --format json --model {request.provider.id}/{request.provider.model_name} "
-                f"{shlex.quote(request.query)}"
+                f"opencode run --format json --model {request.provider.id}/{request.provider.model_name}"
+                f"{session_args} {shlex.quote(request.query)}"
             )
             executed_command = [
                 "opencode",
@@ -92,8 +99,10 @@ class OpenCodeProvisioner:
                 "json",
                 "--model",
                 f"{request.provider.id}/{request.provider.model_name}",
-                request.query,
             ]
+            if opencode_session_id:
+                executed_command.extend(["--session", opencode_session_id])
+            executed_command.append(request.query)
             query_result = self.session.run(
                 query_cmd,
                 cwd=request.launch.cwd or cwd,

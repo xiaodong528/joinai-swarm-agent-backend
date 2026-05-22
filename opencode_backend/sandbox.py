@@ -5,7 +5,6 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Protocol
 import os
-import subprocess
 import uuid
 
 from .layout import FileArtifact
@@ -38,6 +37,8 @@ class SandboxSession(Protocol):
     ) -> CommandResult: ...
 
     def get_public_url(self, port: int) -> str | None: ...
+
+    def kill(self) -> None: ...
 
 
 class E2BSandboxSession:
@@ -108,9 +109,16 @@ class E2BSandboxSession:
                     return f"https://{host}"
         return None
 
+    def kill(self) -> None:
+        kill = getattr(self._sandbox, "kill", None)
+        if kill is not None:
+            kill()
+
 
 class LocalSandboxSession:
     def __init__(self, root: str | None = None) -> None:
+        if root is not None:
+            Path(root).mkdir(parents=True, exist_ok=True)
         self._tmp = TemporaryDirectory(dir=root)
         self._root = Path(self._tmp.name)
         self.sandbox_id = uuid.uuid4().hex[:12]
@@ -155,6 +163,9 @@ class LocalSandboxSession:
 
     def get_public_url(self, port: int) -> str | None:
         return f"http://localhost:{port}"
+
+    def kill(self) -> None:
+        self._tmp.cleanup()
 
 
 def create_session(backend: str | None = None) -> SandboxSession:

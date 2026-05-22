@@ -132,7 +132,7 @@ def _extract_likely_text(value: Any) -> list[str]:
                         chunks.extend(_extract_likely_text(item))
                 elif isinstance(candidate, dict):
                     chunks.extend(_extract_likely_text(candidate))
-        for key in ("parts", "content", "message", "data"):
+        for key in ("part", "parts", "content", "message", "data"):
             nested = value.get(key)
             if isinstance(nested, list):
                 for item in nested:

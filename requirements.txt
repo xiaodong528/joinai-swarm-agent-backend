@@ -5,4 +5,5 @@ httpx>=0.27
 uvicorn>=0.30
 e2b>=2.0
 attrs>=23.2
+cryptography>=42
 

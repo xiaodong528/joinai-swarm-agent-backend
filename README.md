@@ -182,3 +182,16 @@ $env:OPENCODE_PROVIDER_KEY='sk-...'
 .\.conda\python.exe scripts\backend_e2b_query_smoke.py
 ```
 
+## 手工进入 E2B OpenCode 沙箱测试
+
+如果需要启动一个保活的 E2B `opencode` 模板沙箱，然后手工进入沙箱操作 `opencode`，参考：
+
+- [E2B OpenCode 沙箱手工测试](docs/e2b-opencode-sandbox-test.md)
+
+## Persistent chat sessions
+
+The backend also supports persistent multi-turn chat sessions with SQLite storage,
+encrypted provider API keys, per-user isolation, sandbox reuse, and recovery after
+the user leaves.
+
+See [Persistent Chat Sessions](docs/chat-sessions.md).

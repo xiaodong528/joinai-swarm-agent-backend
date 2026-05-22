@@ -18,6 +18,18 @@ def test_parse_opencode_json_output_extracts_assistant_text() -> None:
     assert len(events) == 2
 
 
+def test_parse_opencode_json_output_extracts_opencode_part_text() -> None:
+    stdout = (
+        '{"type":"text","part":{"type":"text","text":"pong"}}\n'
+        '{"type":"step_finish","part":{"type":"step-finish"}}\n'
+    )
+
+    text, events = parse_opencode_json_output(stdout)
+
+    assert text == "pong"
+    assert len(events) == 2
+
+
 def test_build_a2a_task_wraps_opencode_result() -> None:
     response = ProvisionResponse(
         sandbox_id="sandbox-1",

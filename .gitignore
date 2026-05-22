@@ -13,6 +13,7 @@ __pycache__/
 *.sqlite
 *.db
 opencode-a2a.db
+tmp/
 
 dist/
 build/

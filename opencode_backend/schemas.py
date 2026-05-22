@@ -145,3 +145,81 @@ class A2ARunResponse(BaseModel):
 class AGUIRunResponse(BaseModel):
     events: list[dict[str, Any]]
     a2a_task: dict[str, Any]
+
+
+class ChatSessionCreateRequest(BaseModel):
+    title: str | None = None
+    scope: Scope = Scope.project
+    workspace_path: str | None = None
+    config: dict[str, Any] = Field(default_factory=dict)
+    mcp: dict[str, Any] = Field(default_factory=dict)
+    agent_config: dict[str, Any] = Field(default_factory=dict)
+    provider: ProviderInput | None = None
+    skills: list[SkillInput] = Field(default_factory=list)
+    agents: list[AgentInput] = Field(default_factory=list)
+    launch: LaunchInput = Field(default_factory=LaunchInput)
+    a2a: A2ARuntimeInput = Field(default_factory=A2ARuntimeInput)
+
+    @field_validator("workspace_path")
+    @classmethod
+    def validate_workspace_path(cls, value: str | None) -> str | None:
+        return ProvisionRequest.validate_workspace_path(value)
+
+    @model_validator(mode="after")
+    def validate_scope(self) -> "ChatSessionCreateRequest":
+        if self.scope == Scope.project and not self.workspace_path:
+            raise ValueError("workspace_path is required when scope=project")
+        return self
+
+
+class ChatSandboxBindingResponse(BaseModel):
+    sandbox_id: str
+    home_dir: str
+    status: str
+    last_used_at: str
+    expires_at: str
+
+
+class ChatSessionResponse(BaseModel):
+    id: str
+    title: str
+    status: str
+    scope: Scope
+    workspace_path: str | None = None
+    provider: dict[str, Any] | None = None
+    opencode_session_id: str | None = None
+    sandbox: ChatSandboxBindingResponse | None = None
+    created_at: str
+    updated_at: str
+
+
+class ChatMessageResponse(BaseModel):
+    id: str
+    role: Literal["user", "assistant"]
+    content: str
+    a2a_message: dict[str, Any] | None = None
+    created_at: str
+
+
+class ChatRunCreateRequest(BaseModel):
+    message: str
+
+
+class ChatRunResponse(BaseModel):
+    id: str
+    session_id: str
+    status: Literal["queued", "running", "completed", "failed"]
+    user_message_id: str
+    assistant_message_id: str | None = None
+    stdout: str = ""
+    stderr: str = ""
+    error: str | None = None
+    a2a_task: dict[str, Any] | None = None
+    ag_ui_events: list[dict[str, Any]] = Field(default_factory=list)
+    created_at: str
+    updated_at: str
+
+
+class ChatSessionDetailResponse(ChatSessionResponse):
+    messages: list[ChatMessageResponse] = Field(default_factory=list)
+    runs: list[ChatRunResponse] = Field(default_factory=list)
