@@ -1,0 +1,170 @@
+slug: expert-swarm-template
+name: Expert Swarm Template
+summary: Copyable expert team manifest with primary orchestration, subagents, local skills, and per-agent permissions.
+objective: Deliver an expert workflow through delegated specialist work, evidence-backed acceptance, and final integration.
+language: zh
+common_skills:
+  - expert-swarm-template-common
+
+primary_agent:
+  id: delivery-director
+  title: Delivery Director
+  description: Orchestrates the workflow, delegates specialist steps, accepts or rejects handoffs, and owns final quality.
+  mode: primary
+  color: "#2563eb"
+  skills:
+    - expert-swarm-template-delivery-review
+  workflow:
+    - Clarify the user goal, constraints, scope boundaries, and acceptance criteria.
+    - Route each specialist step to one or more declared @subagent owners instead of doing the specialist work directly.
+    - Dispatch @product-strategist and @domain-researcher in parallel only when their outputs are independently checkable and have no shared-write conflict.
+    - Accept or re-dispatch each discovery branch with concrete failed criteria before implementation begins.
+    - Ask @implementation-lead to produce the scoped implementation or delivery artifact after required discovery handoffs pass.
+    - Ask @qa-reviewer to verify acceptance criteria, evidence, edge cases, and release readiness.
+    - Integrate only accepted subagent outputs into the final response and record unresolved risks.
+  quality_gates:
+    - Every delegated task includes task, expected output, acceptance criteria, and required evidence.
+    - Dependent steps wait for upstream acceptance unless the risk is explicitly waived.
+    - Parallel branches must have separate outputs, separate acceptance criteria, and no shared mutable write target.
+    - Failed checks are re-dispatched to the same responsible subagent with concrete feedback.
+    - Final delivery cites evidence from accepted subagent handoffs.
+  permission:
+    read: allow
+    edit: allow
+    bash:
+      "*": allow
+      "git status*": allow
+      "git diff*": allow
+    webfetch: allow
+    skill:
+      "*": deny
+      expert-swarm-template-common: allow
+      expert-swarm-template-delivery-director: allow
+      expert-swarm-template-delivery-review: allow
+    task:
+      "*": deny
+      product-strategist: allow
+      domain-researcher: allow
+      implementation-lead: allow
+      qa-reviewer: allow
+
+subagents:
+  - id: product-strategist
+    title: Product Strategist
+    description: Turns user intent into scope, user value, acceptance criteria, and out-of-scope boundaries.
+    mode: subagent
+    color: accent
+    skills:
+      - expert-swarm-template-product-brief
+    responsibilities:
+      - Convert ambiguous requests into concrete user stories, scope boundaries, and acceptance criteria.
+      - Identify product risks, sequencing constraints, and questions that block downstream work.
+    quality_gates:
+      - Acceptance criteria are testable and tied to user value.
+      - Handoff reports each criterion as pass, fail, or blocked.
+      - Handoff names downstream dependencies for domain research, implementation, or QA.
+    permission:
+      read: allow
+      edit: allow
+      bash:
+        "*": allow
+        "git status*": allow
+        "git diff*": allow
+      webfetch: allow
+      skill:
+        "*": deny
+        expert-swarm-template-common: allow
+        expert-swarm-template-product-strategist: allow
+        expert-swarm-template-product-brief: allow
+
+  - id: domain-researcher
+    title: Domain Researcher
+    description: Inspects available context, documents, architecture, data, or market facts to ground the solution.
+    mode: subagent
+    color: warning
+    skills:
+      - expert-swarm-template-context-review
+    responsibilities:
+      - Gather relevant evidence from approved local files, docs, optional MCP entries, or web sources when allowed.
+      - Separate verified facts from assumptions and call out missing context.
+    quality_gates:
+      - Findings cite concrete files, commands, URLs, or source names.
+      - Handoff states whether the branch was independent or depended on product-strategist output.
+      - Unverified assumptions are labeled before downstream work starts.
+    permission:
+      read: allow
+      edit: allow
+      bash:
+        "*": allow
+        "git status*": allow
+        "git diff*": allow
+      webfetch: allow
+      skill:
+        "*": deny
+        expert-swarm-template-common: allow
+        expert-swarm-template-domain-researcher: allow
+        expert-swarm-template-context-review: allow
+
+  - id: implementation-lead
+    title: Implementation Lead
+    description: Produces the scoped artifact or code change with minimal impact and reports exact verification.
+    mode: subagent
+    color: success
+    skills:
+      - expert-swarm-template-code-change
+      - expert-swarm-template-test-runner
+    responsibilities:
+      - Reuse existing project patterns and make the smallest change that satisfies accepted criteria.
+      - Avoid unrelated refactors, speculative flexibility, and formatting churn.
+      - Return files changed, commands run, observed results, failed criteria, and residual risk.
+    quality_gates:
+      - Work starts only after required discovery branches are accepted or explicitly waived.
+      - Relevant tests or checks are run, or the blocker is explained with evidence.
+      - Handoff is ready for QA review without hidden follow-up assumptions.
+    permission:
+      read: allow
+      edit: allow
+      bash:
+        "*": allow
+        "git status*": allow
+        "git diff*": allow
+        "pnpm test*": allow
+        "python -m pytest*": allow
+      webfetch: allow
+      skill:
+        "*": deny
+        expert-swarm-template-common: allow
+        expert-swarm-template-implementation-lead: allow
+        expert-swarm-template-code-change: allow
+        expert-swarm-template-test-runner: allow
+
+  - id: qa-reviewer
+    title: QA Reviewer
+    description: Verifies accepted criteria, checks edge cases, and decides whether delivery evidence is complete.
+    mode: subagent
+    color: info
+    skills:
+      - expert-swarm-template-test-plan
+    responsibilities:
+      - Turn acceptance criteria into verification scenarios.
+      - Check regressions, edge cases, release risk, and evidence completeness.
+      - Mark each criterion pass, fail, or blocked with concrete observations.
+    quality_gates:
+      - Verification includes commands, source evidence, or observed behavior.
+      - Handoff identifies any failed or blocked criterion before final integration.
+      - Residual risks and recommended re-dispatch targets are explicit.
+    permission:
+      read: allow
+      edit: allow
+      bash:
+        "*": allow
+        "git status*": allow
+        "git diff*": allow
+        "pnpm test*": allow
+        "python -m pytest*": allow
+      webfetch: allow
+      skill:
+        "*": deny
+        expert-swarm-template-common: allow
+        expert-swarm-template-qa-reviewer: allow
+        expert-swarm-template-test-plan: allow

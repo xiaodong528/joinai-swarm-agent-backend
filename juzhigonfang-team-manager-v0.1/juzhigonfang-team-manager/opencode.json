@@ -1,0 +1,140 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "agent": {
+    "expert-team-manager": {
+      "mode": "primary",
+      "description": "负责加载 juzhigonfang-expert-agent-team-manager skill，澄清用户目标，编排 swarm.yaml 设计、skill 配置、包生成、静态验证、归档读回和最终交付说明。",
+      "permission": {
+        "read": "allow",
+        "edit": "allow",
+        "bash": {
+          "*": "allow",
+          "git status*": "allow",
+          "git diff*": "allow",
+          "python*": "allow",
+          "python3*": "allow",
+          "tar*": "allow",
+          "find*": "allow",
+          "rg*": "allow"
+        },
+        "webfetch": "allow",
+        "skill": {
+          "*": "deny",
+          "juzhigonfang-team-manager-common": "allow",
+          "juzhigonfang-team-manager-expert-team-manager": "allow",
+          "juzhigonfang-expert-agent-team-manager": "allow"
+        },
+        "task": {
+          "*": "deny",
+          "manifest-architect": "allow",
+          "skill-configurator": "allow",
+          "package-builder": "allow",
+          "validation-reviewer": "allow"
+        }
+      }
+    },
+    "manifest-architect": {
+      "mode": "subagent",
+      "description": "负责从用户目标、资料或现有包中设计和修订 swarm.yaml，保证命名、角色边界、workflow 和验收门控可生成可验证。",
+      "permission": {
+        "read": "allow",
+        "edit": "allow",
+        "bash": {
+          "*": "allow",
+          "git status*": "allow",
+          "git diff*": "allow",
+          "rg*": "allow",
+          "find*": "allow"
+        },
+        "webfetch": "allow",
+        "skill": {
+          "*": "deny",
+          "juzhigonfang-team-manager-common": "allow",
+          "juzhigonfang-team-manager-manifest-architect": "allow"
+        },
+        "task": {
+          "*": "deny"
+        }
+      }
+    },
+    "skill-configurator": {
+      "mode": "subagent",
+      "description": "负责确认本地 supplemental skills、外部候选 skill、真实 manager skill 资产和每个 agent 的 skill 权限边界。",
+      "permission": {
+        "read": "allow",
+        "edit": "allow",
+        "bash": {
+          "*": "allow",
+          "git status*": "allow",
+          "git diff*": "allow",
+          "rg*": "allow",
+          "find*": "allow"
+        },
+        "webfetch": "allow",
+        "skill": {
+          "*": "deny",
+          "juzhigonfang-team-manager-common": "allow",
+          "juzhigonfang-team-manager-skill-configurator": "allow",
+          "juzhigonfang-expert-agent-team-manager": "allow"
+        },
+        "task": {
+          "*": "deny"
+        }
+      }
+    },
+    "package-builder": {
+      "mode": "subagent",
+      "description": "负责按确认后的 swarm.yaml 运行生成器、同步真实 skill 资产、生成 README、opencode.json 和 dist tar 归档。",
+      "permission": {
+        "read": "allow",
+        "edit": "allow",
+        "bash": {
+          "*": "allow",
+          "git status*": "allow",
+          "git diff*": "allow",
+          "python*": "allow",
+          "python3*": "allow",
+          "tar*": "allow",
+          "find*": "allow"
+        },
+        "webfetch": "allow",
+        "skill": {
+          "*": "deny",
+          "juzhigonfang-team-manager-common": "allow",
+          "juzhigonfang-team-manager-package-builder": "allow",
+          "juzhigonfang-expert-agent-team-manager": "allow"
+        },
+        "task": {
+          "*": "deny"
+        }
+      }
+    },
+    "validation-reviewer": {
+      "mode": "subagent",
+      "description": "负责执行专家团包静态校验、结构读回、权限一致性、归档清单、MCP 策略和敏感信息检查。",
+      "permission": {
+        "read": "allow",
+        "edit": "allow",
+        "bash": {
+          "*": "allow",
+          "git status*": "allow",
+          "git diff*": "allow",
+          "python*": "allow",
+          "python3*": "allow",
+          "tar*": "allow",
+          "rg*": "allow",
+          "find*": "allow"
+        },
+        "webfetch": "allow",
+        "skill": {
+          "*": "deny",
+          "juzhigonfang-team-manager-common": "allow",
+          "juzhigonfang-team-manager-validation-reviewer": "allow"
+        },
+        "task": {
+          "*": "deny"
+        }
+      }
+    }
+  }
+}

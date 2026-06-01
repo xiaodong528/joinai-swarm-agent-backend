@@ -1,0 +1,26 @@
+# $swarm_name
+
+Generated Juzhigonfang expert team package.
+
+## Objective
+
+$objective
+
+## Structure
+
+- `opencode.json`: project runtime configuration.
+- `.opencode/agents/`: primary and subagent Markdown definitions.
+- `.opencode/skills/`: common and role-specific playbooks.
+- `swarm.yaml`: source manifest used to generate this package.
+- `dist/$slug.tar.gz`: packaged copy when generated with `--package`.
+
+## Agents
+
+- Primary: `$primary`
+- Subagents: $subagents
+
+## Usage
+
+Run the team from this project directory. Switch to the primary agent, then ask it to execute the workflow. The primary prompt contains explicit `@subagent` routing and skill loading guidance.
+
+$mcp_note

@@ -1,0 +1,217 @@
+{
+  "skill_name": "juzhigonfang-expert-agent-team-manager",
+  "evals": [
+    {
+      "id": 1,
+      "name": "software-team-package",
+      "prompt": "用内置软件开发团队示例生成一个 Juzhigonfang 原生专家团项目包，并打包成 tar.gz。",
+      "expected_output": "A generated package with opencode.json, .opencode/agents, .opencode/skills, README.md, swarm.yaml, and dist/software-dev-team.tar.gz.",
+      "files": [],
+      "expectations": [
+        "Creates exactly one primary agent and at least four subagent markdown files.",
+        "Creates a common skill and role-specific skills under .opencode/skills.",
+        "Creates dedicated per-agent skills declared in the manifest.",
+        "Creates dist/software-dev-team.tar.gz with the generated project files.",
+        "Leaves all MCP entries disabled by default.",
+        "Primary agent uses a delegation-first operating model instead of directly executing specialist workflow steps.",
+        "Primary agent explains when subagent work should run serially versus as a parallel batch.",
+        "Subagent and role-skill prompts require evidence plus acceptance criteria status in handoffs."
+      ]
+    },
+    {
+      "id": 2,
+      "name": "custom-swarm-package",
+      "prompt": "创建一个投研专家团 manifest，主智能体是 research-director，子智能体有 data-analyst、sector-researcher、risk-reviewer，生成 Juzhigonfang 项目包。",
+      "expected_output": "A configurable expert swarm package that is not hardcoded to the software development example.",
+      "files": [],
+      "expectations": [
+        "Uses the custom agent ids from the requested manifest.",
+        "Creates generated role skill names from the custom slug and agent ids.",
+        "Primary agent includes @data-analyst, @sector-researcher, and @risk-reviewer routing.",
+        "Primary agent accepts, rejects, or re-dispatches subagent outputs against explicit criteria.",
+        "Primary agent allows independent research branches to run in parallel when outputs can be accepted separately.",
+        "Does not add default MCP placeholders when the manifest does not configure mcp_servers.",
+        "Generated opencode.json validates as JSON."
+      ]
+    },
+    {
+      "id": 3,
+      "name": "manifest-validation",
+      "prompt": "检查一个 swarm.yaml：slug 写成 Expert Team，另一个 subagent id 写成 qa--engineer。应该指出错误，不要生成包。",
+      "expected_output": "A validation failure that explains lowercase-hyphen naming requirements.",
+      "files": [],
+      "expectations": [
+        "Rejects invalid slug values.",
+        "Rejects agent ids with consecutive hyphens.",
+        "Does not create a partial generated package after validation failure."
+      ]
+    },
+    {
+      "id": 4,
+      "name": "mcp-placeholder-policy",
+      "prompt": "生成一个带远程 MCP 和本地 MCP 的 Juzhigonfang 专家团，但所有 MCP 都先占位禁用。",
+      "expected_output": "An opencode.json with local and remote MCP definitions where enabled is false.",
+      "files": [],
+      "expectations": [
+        "Remote MCP entry includes type remote and a URL placeholder.",
+        "Local MCP entry includes type local and command array placeholder.",
+        "All MCP entries include enabled false.",
+        "Agent permissions keep MCP tool globs denied or ask-gated by role."
+      ]
+    },
+    {
+      "id": 5,
+      "name": "no-manifest-interactive-confirmation",
+      "prompt": "我没有 swarm.yaml，想做一个法律合同审查专家团，帮我生成 Juzhigonfang agents、skills 和 mcp 配置包。",
+      "expected_output": "The skill should start an interactive manifest confirmation flow before writing or generating anything.",
+      "files": [],
+      "expectations": [
+        "Does not immediately run the generator or create a package.",
+        "Uses an ask-user-question style tool when available, or asks one concise fallback question.",
+        "Collects manifest fields across multiple rounds instead of requesting a single large form.",
+        "Uses find-skills to search local Skills CLI / skills.sh candidates for the expert team roles.",
+        "Uses internet-skill-finder to search verified GitHub repository skill candidates.",
+        "Presents candidate skills by role and asks the user which should become local common or agent skills.",
+        "Does not auto-install external skills or silently write finder results into swarm.yaml.",
+        "Asks how primary workflow steps map to subagent delegation and acceptance gates.",
+        "Asks which workflow steps are dependent and which can run in parallel with independent acceptance gates.",
+        "Requires a final swarm.yaml review gate before generation."
+      ]
+    },
+    {
+      "id": 6,
+      "name": "uploaded-manifest-delta-review",
+      "prompt": "我已经上传了 swarm.yaml，但里面缺少 primary_agent.workflow，engineer 的 skills 还是空的，且一个 mcp 写了 enabled: true。请继续生成。",
+      "expected_output": "The skill should validate the uploaded manifest, ask only about the missing/conflicting fields, and preserve valid fields.",
+      "files": [],
+      "expectations": [
+        "Does not restart the full no-manifest interview.",
+        "Asks specifically about the missing primary workflow.",
+        "Runs targeted finder searches only for the engineer skill gap.",
+        "Asks whether discovered engineer candidates should become local supplemental skills before editing the manifest.",
+        "Checks whether the primary workflow asks the primary agent to directly execute specialist work despite declared subagents.",
+        "Explains that MCP output remains disabled placeholders and confirms whether to keep the MCP entry.",
+        "Requires an updated final swarm.yaml confirmation before generation."
+      ]
+    },
+    {
+      "id": 7,
+      "name": "independent-from-brainstorming",
+      "prompt": "参考 brainstorming 的方式，但不要调用 brainstorming。没有 manifest，先帮我确认一个数据治理专家团的 swarm.yaml。",
+      "expected_output": "The skill should use its own interactive confirmation workflow without invoking or depending on the brainstorming skill.",
+      "files": [],
+      "expectations": [
+        "Does not instruct the model to load or invoke the brainstorming skill.",
+        "Uses this skill's own Interactive Manifest Confirmation workflow.",
+        "Asks focused questions that map to swarm.yaml fields.",
+        "Uses finder-backed skill discovery for data governance roles before drafting final YAML.",
+        "Confirms which candidate skills are local generated skills versus external installation suggestions.",
+        "Waits for final YAML confirmation before generation."
+      ]
+    },
+    {
+      "id": 8,
+      "name": "per-agent-skills-and-permissions",
+      "prompt": "用 software-dev-team 示例生成包，检查 engineer 和 qa-engineer 是否有自己的专属 skills，并且 .md frontmatter 和 opencode.json 里的 permission 完全一致。",
+      "expected_output": "A generated package where per-agent skills exist and permissions are controlled through Juzhigonfang permission in both agent markdown and opencode.json.",
+      "files": [],
+      "expectations": [
+        "Generates dedicated skill directories such as software-dev-team-code-change and software-dev-team-test-plan.",
+        "Engineer permission includes skill allowlist, edit ask, bash command rules, and local-repo-tools_* ask.",
+        "QA permission includes skill allowlist, edit deny, bash test rule, and denies MCP tools not assigned to it.",
+        "For each checked agent, Markdown frontmatter permission equals opencode.json agent.<id>.permission.",
+        "Does not recommend the legacy tools boolean field for new manifests.",
+        "Primary task permissions allow declared subagents while subagents remain unable to call sibling agents by default."
+      ]
+    },
+    {
+      "id": 9,
+      "name": "delegation-first-acceptance-loop",
+      "prompt": "创建一个内容生产专家团，主智能体只负责编排和验收，子智能体负责选题、撰稿、审校。生成包时要体现每一步验收不通过就重新派给同一个子智能体返工。",
+      "expected_output": "A generated Juzhigonfang swarm package whose primary agent delegates specialist workflow steps, verifies each handoff, and re-dispatches failed work with concrete feedback.",
+      "files": [],
+      "expectations": [
+        "Primary agent prompt says it is the workflow orchestrator and acceptance owner.",
+        "Primary agent prompt says not to directly perform specialist workflow steps when a declared subagent owns them.",
+        "Primary agent prompt requires each delegated task to include task, expected output, acceptance criteria, and evidence required.",
+        "Primary agent prompt allows parallel batches only for independent branches with no shared-write conflict and separate acceptance criteria.",
+        "Primary agent prompt re-dispatches failed work to the same @agent-id with failed criteria and required rework.",
+        "Subagent output contract includes completed work, evidence, acceptance criteria status, failed or blocked criteria, and unresolved risks."
+      ]
+    },
+    {
+      "id": 10,
+      "name": "parallel-subagent-workflow",
+      "prompt": "创建一个并行投研专家团，主智能体先并行派 data-analyst 做数据口径、sector-researcher 做行业背景、risk-reviewer 做风险清单，三个结果都验收后再整合；某个分支不合格只重派那个分支。",
+      "expected_output": "A generated package whose primary agent can dispatch independent research branches in parallel, accept each branch separately, and re-dispatch only failed branches before integration.",
+      "files": [],
+      "expectations": [
+        "Primary agent prompt distinguishes dependent serial work from independent parallel work.",
+        "Parallel branches have separate tasks, expected outputs, acceptance criteria, and evidence requirements.",
+        "Primary agent does not advance dependent integration until required parallel branches pass or are explicitly waived.",
+        "If one parallel branch fails, primary re-dispatches only the failed branch.",
+        "Subagent handoff contract reports dependencies and whether the branch was parallel-safe."
+      ]
+    },
+    {
+      "id": 11,
+      "name": "finder-backed-skill-selection-before-generation",
+      "prompt": "我没有 manifest，想做一个视频制作专家团：主智能体统筹，子智能体包括脚本策划、分镜、剪辑质检。先帮我找适合 main agent 和 sub agent 的技能并问我确认，不要直接生成 swarm.yaml。",
+      "expected_output": "The skill should run role-aware skill discovery with find-skills and internet-skill-finder, confirm candidates with the user, and wait before writing or generating the final manifest.",
+      "files": [],
+      "expectations": [
+        "Uses find-skills for local Skills CLI / skills.sh discovery.",
+        "Uses internet-skill-finder for verified GitHub repository discovery.",
+        "Groups candidate skills by primary agent and each subagent role.",
+        "Uses an ask-user-question style tool to confirm which candidates to use.",
+        "Explains that external finder candidates are not installed or packaged unless the user confirms installation, copying, or local supplemental skill conversion.",
+        "Does not generate swarm.yaml before candidate skill choices are confirmed."
+      ]
+    },
+    {
+      "id": 12,
+      "name": "source-material-conversion",
+      "prompt": "根据这份产品交付流程资料，把它转成聚智工坊 Juzhigonfang 专家团：里面有产品澄清、架构设计、实现、QA 验收四个阶段。先提取角色和 SOP，再让我确认 swarm.yaml。",
+      "expected_output": "The skill should convert source material into a draft swarm.yaml with roles, workflow, quality gates, and resource mapping before generation.",
+      "files": [],
+      "expectations": [
+        "Separates source facts from inferred expert-team structure.",
+        "Maps role descriptions into primary_agent and subagents instead of WorkBuddy plugin fields.",
+        "Maps SOP steps into primary_agent.workflow with serial and parallel routing called out.",
+        "Maps output requirements into quality_gates or local supplemental skills.",
+        "Does not create .codebuddy-plugin/plugin.json, marketplace.json, avatar, categoryId, displayName, or profession fields.",
+        "Shows a complete swarm.yaml draft and waits for confirmation before generating files."
+      ]
+    },
+    {
+      "id": 13,
+      "name": "modify-existing-team-regenerate",
+      "prompt": "修改已有专家团包，只新增一个 risk-reviewer 子智能体，并重新生成、验证和打包。不要直接手改 .opencode 派生文件。",
+      "expected_output": "The skill should locate the package, modify swarm.yaml as the source of truth, regenerate derived files with confirmation for overwrite, and run validation.",
+      "files": [],
+      "expectations": [
+        "Reads existing swarm.yaml before planning edits.",
+        "Treats .opencode, opencode.json, README.md, and dist as derived artifacts.",
+        "Makes the smallest manifest change needed to add risk-reviewer.",
+        "Asks for explicit overwrite or --force confirmation before replacing an existing output directory.",
+        "Runs validate_expert_team.py after regeneration.",
+        "Reports changed manifest fields, generated files, validation result, and residual risks."
+      ]
+    },
+    {
+      "id": 14,
+      "name": "bad-package-validation-report",
+      "prompt": "检查这个专家团包为什么不能用：它缺少 primary agent markdown，opencode.json 里 MCP enabled 是 true，还疑似写了真实 API token。不要重写文件，先给失败原因。",
+      "expected_output": "The skill should run or explain static validation, classify structural errors versus warnings, and avoid rewriting the package to hide issues.",
+      "files": [],
+      "expectations": [
+        "Uses scripts/validate_expert_team.py or follows the same checks.",
+        "Reports missing primary agent markdown as an error.",
+        "Reports enabled MCP as an error because placeholders must stay disabled.",
+        "Reports possible secret/token material as a warning or error with file context.",
+        "Does not regenerate or overwrite files during a validation-only request.",
+        "Gives concrete repair steps grounded in swarm.yaml and generated artifact consistency."
+      ]
+    }
+  ]
+}
