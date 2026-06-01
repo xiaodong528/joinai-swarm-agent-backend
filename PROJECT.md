@@ -1,5 +1,31 @@
 # Swarm Engine 项目说明
 
+## 亚信/CM Sandbox 对接方案摘要
+
+当前项目已经实现 FastAPI + E2B Sandbox + OpenCode CLI 的专家生成和运行闭环，但目标对接形态是：上游调用方通过 CM Sandbox SDK 管理 sandbox，通过 OpenCode Server API 调用专家开发态/运行态，并通过 S3 和代理协议完成专家依赖、模型 JSON、会话数据、状态 hook 和制品产物同步。
+
+详细对接技术方案见 [README.md](README.md)。README 按两个视角组织：
+
+- **上游调用方（亚信）**：说明创建/启动/停止 CM Sandbox、调用 OpenCode Server API、上传专家依赖、上传模型 JSON、读取 S3 产物的目标流程。
+- **OpenCode Sandbox 内部**：说明加载专家文件、加载模型 JSON/litellm、启动 `0.0.0.0:4096`、会话同步插件、状态 hook、制品上传的目标机制。
+
+当前主要差距：
+
+- Sandbox 适配层仍是 E2B，不是 CM Sandbox SDK。
+- 执行方式仍是 `opencode run` CLI，不是 OpenCode Server `0.0.0.0:4096` API。
+- 尚未实现 CM Sandbox 上传专家依赖、模型 JSON、会话数据、制品产物到 S3。
+- 尚未对齐 `JAS OpenCode子智能体相关接口.docx` 和 `CM+Sandbox+SDK手册.pdf` 的正式接口。
+- hook 当前主要做事件透传和本地 JSONL，尚未按代理协议拆出会话结束、运行失败、打断、超时等标准状态写入接口。
+
+当前占位约定：
+
+```text
+s3://fake-joinai-swarm/{tenant_id}/{sandbox_id}/experts/{expert_id}/
+s3://fake-joinai-swarm/{tenant_id}/{sandbox_id}/models/model.json
+s3://fake-joinai-swarm/{tenant_id}/{sandbox_id}/sessions/{session_id}/
+s3://fake-joinai-swarm/{tenant_id}/{sandbox_id}/artifacts/{session_id}/
+```
+
 ## 目标
 
 本项目实现一个多用户 E2B OpenCode Agent 模板生成引擎。
