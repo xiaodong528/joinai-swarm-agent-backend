@@ -1,504 +1,406 @@
-# JAS OpenCode Sandbox 对接技术方案
+# Swarm Engine 对接技术方案
 
-本文面向上游调用方（亚信）和 OpenCode Sandbox 内部研发侧，说明专家开发态/运行态的目标调用流程、当前项目能力、差距和后续改造方案。
+本文说明当前项目与上游调用方、E2B OpenCode Sandbox 内部流程的对接方式，并列出后续可能替换为 CM Sandbox、S3 同步、代理协议 hook 时需要改造的位置。
 
-当前仓库已实现一套 FastAPI + E2B Sandbox + OpenCode CLI 的专家生成/运行引擎；目标方案需要对接 CM Sandbox、OpenCode Server API、S3 目录同步、litellm 模型 JSON 和代理协议 hook。
+当前原则：
 
-> 说明：当前仓库未包含 `opencode-dev/`、`JAS OpenCode子智能体相关接口.docx`、`CM+Sandbox+SDK手册.pdf`。本文涉及 CM Sandbox SDK、OpenCode Server API、代理协议字段的部分先使用占位接口和假 S3 路径，待外部文档确认后替换为正式定义。
+- **Sandbox 暂时不改**：仍使用 E2B sandbox。
+- **OpenCode 执行方式暂时不改**：仍沿用当前 E2B 内置 `opencode` 和 `opencode run` 逻辑。
+- **`0.0.0.0:4096` 的含义**：用于让外部能够访问 E2B sandbox 内的 OpenCode 服务/端口，不代表当前要把执行链路改成 OpenCode Server API。
+- **CM Sandbox/S3/代理协议先预留**：文档中标出后续替换点和占位路径，代码当前仍按 E2B 执行。
 
-## 1. 总体目标
+## 1. 当前目标流程
 
-目标是让上游调用方可以完成以下闭环：
+上游调用方要完成两类流程：
 
-1. 通过 CM Sandbox 创建、启动、停止一个内置 OpenCode 的 sandbox。
-2. 在 sandbox 内启动 OpenCode Server，监听 `0.0.0.0:4096`。
-3. 上传或挂载专家文件、依赖文件、模型 JSON。
-4. 调用 OpenCode Server API 完成专家开发态和运行态会话。
-5. 将专家依赖、会话数据、制品产物同步到指定 S3 目录。
-6. 通过 hook 将会话数据和会话状态写入代理服务接口。
+1. **专家开发态**：创建 sandbox，使用 E2B 内置 OpenCode 生成专家智能体模板/专家包。
+2. **专家运行态**：选择已生成模板，创建新的 runtime sandbox，加载该专家包并执行新的 query。
+
+最终输出：
+
+- 专家包路径。
+- 模板 `template_id`。
+- runtime 会话路径。
+- 会话状态和事件文件。
+- 后续可同步到 S3 的专家依赖、会话数据、制品产物路径。
 
 ## 2. 总体架构
 
 ```mermaid
 flowchart TD
-    UP[上游调用方/亚信] -->|CM Sandbox SDK| CM[CM Sandbox]
-    UP -->|OpenCode Server API| OCAPI[OpenCode Server<br/>0.0.0.0:4096]
-    UP -->|代理协议接口| PROXY[代理服务]
+    UP[上游调用方/亚信] --> API[Swarm Engine FastAPI]
 
-    CM --> BOX[OpenCode Sandbox]
-    BOX --> OCAPI
-    BOX --> OPDEV[opencode-dev/ 源码]
-    BOX --> EXPERT[专家智能体文件<br/>agents/ skills/ opencode.json]
-    BOX --> MODEL[模型 JSON<br/>litellm 配置]
-    BOX --> PLUGIN[会话同步插件 + 状态 hook]
+    API --> GEN[创建引擎<br/>Generation Session]
+    API --> REG[模板 Registry<br/>template_id]
+    API --> RUN[运行引擎<br/>Runtime Session]
 
-    OCAPI --> DEV[专家开发态<br/>生成/修改/校验专家包]
-    OCAPI --> RUN[专家运行态<br/>加载专家包并执行 query]
+    GEN -->|create/connect| E2BG[E2B OpenCode Sandbox<br/>开发态]
+    E2BG --> TMPL[/专家团管理模板/]
+    TMPL -->|opencode run --agent expert-team-manager| PKG[生成专家包<br/>generated_package_path]
+    PKG -->|validate_expert_team.py| REG
 
-    DEV --> ARTIFACT[专家包/制品产物]
-    RUN --> SESSION[会话数据/消息/工具调用/状态]
+    UP -->|GET /v1/templates| REG
+    UP -->|选择 template_id| RUN
+    RUN -->|create/connect| E2BR[E2B OpenCode Sandbox<br/>运行态]
+    PKG -->|tar/base64 导入| E2BR
+    E2BR --> RPKG[/runtime package/]
+    RPKG -->|opencode run --agent primary| RESULT[运行结果]
 
-    PLUGIN -->|会话数据| PROXY
-    PLUGIN -->|结束/失败/打断状态| PROXY
+    E2BG --> GSTATE[开发态 state/events/session-export]
+    E2BR --> RSTATE[运行态 state/events/session-export]
 
-    CM -->|上传专家依赖| S3EXP[(S3 experts/)]
-    CM -->|上传模型 JSON| S3MODEL[(S3 models/)]
-    CM -->|上传会话数据| S3SESSION[(S3 sessions/)]
-    CM -->|上传制品产物| S3ART[(S3 artifacts/)]
+    GSTATE -.后续预留.-> S3[(S3 sessions/artifacts)]
+    RSTATE -.后续预留.-> S3
+    RESULT -.后续预留.-> PROXY[代理服务状态/会话接口]
 ```
 
-## 3. 上游调用方流程
+## 3. 上游调用方接口
 
-### 3.1 创建并启动 CM Sandbox
+### 3.1 创建开发态 Sandbox
 
-目标：创建一个内置 OpenCode 的 sandbox，并确保 OpenCode Server 可以通过 `0.0.0.0:4096` 访问。
+当前接口：
 
-占位调用：
-
-```text
-CM Sandbox SDK:
-  createSandbox(template = "opencode")
-  startSandbox(sandbox_id)
-  exposePort(sandbox_id, 4096, host = "0.0.0.0")
+```http
+POST /v1/sessions
 ```
 
-预期输出：
+请求：
 
 ```json
 {
-  "sandbox_id": "cm-sandbox-xxx",
-  "opencode_base_url": "http://<sandbox-host>:4096",
-  "status": "running"
+  "user_id": "user-1",
+  "webhook_url": "https://example.com/session-events",
+  "session_status_url": "https://example.com/session-status",
+  "keep_sandbox": true
 }
 ```
 
-待确认：
+作用：
 
-- CM Sandbox SDK 的正式创建/启动/停止接口名。
-- 端口暴露方式和鉴权方式。
-- sandbox 模板名和启动命令配置方式。
+- 创建 E2B `opencode` sandbox。
+- 将专家团管理模板复制到 `/home/user/template`。
+- 注入 `session-export.ts`、`session-import.ts`、`proxy-hooks.ts`。
+- 写入 `state/status.json`。
 
-### 3.2 上传专家依赖文件到 S3 和 Sandbox
+返回重点：
 
-目标：将专家智能体依赖文件放到约定目录，供 OpenCode Server 加载。
+- `session_id`
+- `sandbox_id`
+- `status`
+- `session_export_path`
+- `state_path`
 
-占位 S3 目录：
+后续预留：
 
-```text
-s3://fake-joinai-swarm/{tenant_id}/{sandbox_id}/experts/{expert_id}/
+- 如果未来切 CM Sandbox，这里替换 sandbox factory 即可。
+- 如果需要暴露 E2B 内 OpenCode 服务，可在 sandbox 初始化后启动监听 `0.0.0.0:4096` 的 opencode 服务，并把访问地址写入 `data.opencode_endpoint`。
+
+### 3.2 生成专家模板/专家包
+
+当前接口：
+
+```http
+POST /v1/sessions/{session_id}/generate
 ```
 
-建议 sandbox 目录：
+请求：
+
+```json
+{
+  "user_id": "user-1",
+  "query": "创建一个软件交付专家团队",
+  "output_root": "exports/custom-output",
+  "output_slug": "software-delivery-team",
+  "timeout_ms": 600000
+}
+```
+
+当前执行：
+
+```bash
+opencode run --agent expert-team-manager <prompt>
+```
+
+输出：
+
+- `generated_package_path`
+- `data.template_id`
+- `data.validation_stdout`
+
+生成成功后也会写模板元数据：
 
 ```text
-/home/user/opencode-workspace/experts/{expert_id}/
+/home/user/template/.engine-sessions/<session_id>/state/template-<template_id>.json
+```
+
+### 3.3 查询模板列表
+
+当前接口：
+
+```http
+GET /v1/templates?user_id=user-1
+```
+
+作用：
+
+- 给上游/前端展示当前已生成模板。
+- 供用户选择某个 `template_id` 创建运行态。
+
+返回字段：
+
+- `template_id`
+- `source_session_id`
+- `source_sandbox_id`
+- `package_path`
+- `output_root`
+- `output_slug`
+- `status`
+- `created_at`
+
+### 3.4 创建运行态 Sandbox
+
+当前接口：
+
+```http
+POST /v1/runtime-sessions
+```
+
+推荐请求：
+
+```json
+{
+  "user_id": "user-1",
+  "template_id": "<template-id>",
+  "webhook_url": "https://example.com/runtime-events",
+  "session_status_url": "https://example.com/runtime-status",
+  "keep_sandbox": true
+}
+```
+
+当前执行：
+
+1. 创建新的 E2B runtime sandbox。
+2. 从源 sandbox 的 `package_path` 打 tar/base64。
+3. 解压到 runtime sandbox：
+
+   ```text
+   /home/user/template/.runtime-sessions/<runtime_session_id>/package
+   ```
+
+4. 注入同一组 OpenCode 插件。
+5. 合并 runtime package 的 `opencode.json` 插件配置。
+6. 自动识别 `mode: primary` 的 agent。
+
+返回重点：
+
+- `runtime_session_id`
+- `sandbox_id`
+- `source_package_path`
+- `runtime_package_path`
+- `data.primary_agent`
+
+### 3.5 执行运行态 Query
+
+当前接口：
+
+```http
+POST /v1/runtime-sessions/{runtime_session_id}/query
+```
+
+请求：
+
+```json
+{
+  "user_id": "user-1",
+  "query": "用刚生成的专家团分析这个需求",
+  "agent": "<optional-agent-id>",
+  "timeout_ms": 600000
+}
+```
+
+当前执行：
+
+```bash
+opencode run --agent <primary-agent> <query>
+```
+
+工作目录：
+
+```text
+/home/user/template/.runtime-sessions/<runtime_session_id>/package
+```
+
+输出：
+
+- `status`
+- `data.last_stdout`
+- `data.last_stderr`
+- `data.last_result_path`
+
+### 3.6 查询和关闭
+
+生成态：
+
+```http
+GET /v1/sessions/{session_id}/status?user_id=user-1
+POST /v1/sessions/{session_id}/close
+```
+
+运行态：
+
+```http
+GET /v1/runtime-sessions/{runtime_session_id}/status?user_id=user-1
+POST /v1/runtime-sessions/{runtime_session_id}/close
+```
+
+## 4. E2B OpenCode Sandbox 内部内容
+
+### 4.1 开发态目录
+
+```text
+/home/user/template/
 ├── opencode.json
 ├── .opencode/
 │   ├── agents/
-│   └── skills/
-└── README.md
+│   ├── skills/
+│   └── plugins/
+├── .engine-sessions/<session_id>/
+│   ├── generated/
+│   ├── session-export/
+│   └── state/
+└── exports/
 ```
 
-占位调用：
+### 4.2 运行态目录
 
 ```text
-CM Sandbox SDK:
-  uploadDirectory(local_or_s3_source, sandbox_path)
-  uploadDirectory(sandbox_path, s3_target)
+/home/user/template/.runtime-sessions/<runtime_session_id>/
+├── package/
+│   ├── swarm.yaml
+│   ├── opencode.json
+│   ├── README.md
+│   └── .opencode/
+├── session-export/
+└── state/
+    ├── status.json
+    ├── events.jsonl
+    ├── webhook-dead-letter.jsonl
+    ├── last-query.txt
+    ├── last-result.txt
+    └── source-package.tar.gz.b64
 ```
 
-### 3.3 上传模型 JSON
+### 4.3 插件
 
-目标：将模型 JSON 上传到 sandbox 指定目录，作为 OpenCode 内置 litellm 模型配置。
-
-占位 S3 目录：
+当前注入：
 
 ```text
-s3://fake-joinai-swarm/{tenant_id}/{sandbox_id}/models/model.json
+.opencode/plugins/session-export.ts
+.opencode/plugins/session-import.ts
+.opencode/plugins/proxy-hooks.ts
 ```
 
-建议 sandbox 目录：
+作用：
 
-```text
-/home/user/opencode-workspace/models/model.json
-```
+- `session-export.ts`：导出 OpenCode session 快照到 `session-export/`。
+- `session-import.ts`：导入 OpenCode session JSON。
+- `proxy-hooks.ts`：监听 OpenCode event，写入 `events.jsonl`，并按 webhook 配置发送事件。
 
-占位模型 JSON：
+注意：当前 hook 会记录中间消息、message parts、工具调用输入输出、diff、todo、错误信息。若上游只需要状态，需要在 hook 层增加过滤或标准状态映射。
 
-```json
-{
-  "model_id": "deepseek-v4-pro",
-  "provider": "litellm",
-  "base_url": "https://example.invalid/v1",
-  "api_key_env": "DEEPSEEK_API_KEY",
-  "extra": {}
-}
-```
+## 5. 后续预留位置
 
-待确认：
+### 5.1 Sandbox 管理
 
-- litellm 模型 JSON 的正式 schema。
-- OpenCode Server 加载模型 JSON 的启动参数或配置路径。
+当前：
 
-### 3.4 启动 OpenCode Server
+- `engine/sandbox.py`
+- `E2BSandboxFactory`
+- `E2BSandboxHandle`
 
-目标：sandbox 内启动 OpenCode Server 并监听 `0.0.0.0:4096`。
+未来如果改 CM Sandbox，优先替换这一层，不改业务服务层。
 
-占位命令：
+### 5.2 OpenCode 可访问端口
 
-```bash
-cd /home/user/opencode-workspace
-opencode serve --host 0.0.0.0 --port 4096 \
-  --model-config /home/user/opencode-workspace/models/model.json
-```
+当前：
 
-待确认：
+- `OPENCODE_PORT` 默认 `4096` 已在配置中存在。
+- 还没有自动启动监听 `0.0.0.0:4096` 的 opencode 服务。
 
-- `opencode-dev/` 中实际启动命令。
-- OpenCode Server 是否需要 project/workspace 初始化接口。
-- OpenCode Server API 鉴权方式。
+后续可增加：
 
-### 3.5 调用 OpenCode Server API
+- sandbox 初始化时启动 opencode 服务。
+- 将 `opencode_endpoint` 写入 session/runtime response 的 `data`。
+- 该服务只用于外部访问 E2B 内 opencode，不改变当前 `opencode run` 主执行逻辑。
 
-目标：通过 OpenCode Server API 完成专家开发态和运行态。
+### 5.3 S3 占位目录
 
-占位接口：
-
-| 目的 | 方法 | 路径 | 说明 |
-| --- | --- | --- | --- |
-| 健康检查 | `GET` | `/health` | 确认 OpenCode Server 已启动 |
-| 创建会话 | `POST` | `/sessions` | 创建开发态或运行态会话 |
-| 发送 query | `POST` | `/sessions/{session_id}/messages` | 向专家发送任务 |
-| 查询会话 | `GET` | `/sessions/{session_id}` | 获取状态和元信息 |
-| 获取消息 | `GET` | `/sessions/{session_id}/messages` | 获取会话消息 |
-| 打断会话 | `POST` | `/sessions/{session_id}/interrupt` | 中断运行中任务 |
-| 关闭会话 | `POST` | `/sessions/{session_id}/close` | 关闭或归档会话 |
-
-待确认：以上路径需要按 `JAS OpenCode子智能体相关接口.docx` 替换为真实接口。
-
-### 3.6 同步结果和产物
-
-目标：上游能够拿到会话数据、专家包、制品产物和状态结果。
-
-占位 S3 目录：
-
-```text
-s3://fake-joinai-swarm/{tenant_id}/{sandbox_id}/sessions/{session_id}/
-s3://fake-joinai-swarm/{tenant_id}/{sandbox_id}/artifacts/{session_id}/
-```
-
-建议返回结构：
-
-```json
-{
-  "sandbox_id": "cm-sandbox-xxx",
-  "session_id": "jas-session-xxx",
-  "status": "completed",
-  "expert_s3_uri": "s3://fake-joinai-swarm/t1/s1/experts/e1/",
-  "session_s3_uri": "s3://fake-joinai-swarm/t1/s1/sessions/jas-session-xxx/",
-  "artifact_s3_uri": "s3://fake-joinai-swarm/t1/s1/artifacts/jas-session-xxx/"
-}
-```
-
-## 4. OpenCode Sandbox 内部流程
-
-### 4.1 启动初始化
-
-sandbox 启动后执行：
-
-1. 检查专家文件目录是否存在。
-2. 检查模型 JSON 是否存在。
-3. 将模型 JSON 转换或挂载为 OpenCode/litellm 可读取配置。
-4. 安装或加载会话同步插件和状态 hook。
-5. 启动 OpenCode Server `0.0.0.0:4096`。
-
-建议目录：
-
-```text
-/home/user/opencode-workspace/
-├── experts/
-│   └── {expert_id}/
-├── models/
-│   └── model.json
-├── sessions/
-├── artifacts/
-└── hooks/
-```
-
-### 4.2 专家开发态
-
-开发态用于创建、修改、校验专家智能体包。
-
-输入：
-
-- 用户 query。
-- 专家模板或历史专家包。
-- 模型 JSON。
-
-输出：
-
-- `opencode.json`
-- `.opencode/agents/`
-- `.opencode/skills/`
-- `README.md`
-- `dist/<expert_id>.tar.gz`
-- 校验结果。
-
-产物上传：
+当前不做真实上传，只保留路径约定：
 
 ```text
 s3://fake-joinai-swarm/{tenant_id}/{sandbox_id}/experts/{expert_id}/
+s3://fake-joinai-swarm/{tenant_id}/{sandbox_id}/models/model.json
+s3://fake-joinai-swarm/{tenant_id}/{sandbox_id}/sessions/{session_id}/
 s3://fake-joinai-swarm/{tenant_id}/{sandbox_id}/artifacts/{session_id}/
 ```
 
-### 4.3 专家运行态
+后续可在生成完成、runtime query 完成、session-export 完成后触发上传。
 
-运行态用于加载已生成专家包并执行新的 query。
+### 5.4 模型 JSON
 
-输入：
+当前：
 
-- `expert_id` 或专家包 S3 URI。
-- 用户 query。
-- 模型 JSON。
+- 使用 `DEEPSEEK_API_KEY` 和 `OPENCODE_MODEL` 环境变量。
 
-内部动作：
+后续预留：
 
-1. 加载专家文件。
-2. 识别 primary agent。
-3. 创建 OpenCode session。
-4. 执行 query。
-5. 持续同步 session snapshot。
-6. 结束后上传结果和制品。
+- 支持上游上传模型 JSON。
+- 将模型 JSON 放入 sandbox 指定目录。
+- 在 opencode 启动或执行时读取模型 JSON。
+- 与 litellm schema 对齐。
 
-输出：
+### 5.5 代理协议 Hook
 
-- 会话状态。
-- 会话消息。
-- 工具调用记录。
-- 生成文件/制品。
-- S3 URI。
+当前：
 
-### 4.4 会话同步插件
+- `proxy-hooks.ts` 透传 OpenCode event。
 
-会话同步插件负责：
+后续应增加标准状态映射：
 
-- 监听 session/message/tool/todo/diff 等事件。
-- 导出完整会话快照。
-- 将会话数据写入 sandbox 本地目录。
-- 调用 CM Sandbox SDK 或代理服务将会话数据同步到 S3。
-- 调用代理协议会话数据写入接口。
+| OpenCode 事件 | 代理状态 |
+| --- | --- |
+| `session.created` | `created` |
+| `session.status` busy | `running` |
+| `session.idle` | `completed` |
+| `session.error` | `failed` |
+| interrupt 成功 | `interrupted` |
+| timeout | `timeout` |
+| close 成功 | `closed` |
 
-建议本地目录：
-
-```text
-/home/user/opencode-workspace/sessions/{session_id}/
-├── session.json
-├── messages.json
-├── events.jsonl
-├── status.json
-└── result.json
-```
-
-占位 S3 目录：
-
-```text
-s3://fake-joinai-swarm/{tenant_id}/{sandbox_id}/sessions/{session_id}/
-```
-
-### 4.5 状态 Hook
-
-状态 hook 负责监听并上报：
-
-- 会话开始。
-- 会话运行中。
-- 会话结束。
-- 运行失败。
-- 用户打断。
-- 超时。
-- sandbox 异常。
-
-建议标准状态：
-
-```text
-created
-starting
-running
-completed
-failed
-interrupted
-timeout
-closed
-```
-
-代理服务状态写入接口占位：
+占位状态接口：
 
 ```http
 POST /proxy/session-status
 ```
 
-占位 payload：
-
-```json
-{
-  "version": 1,
-  "tenant_id": "tenant-1",
-  "sandbox_id": "cm-sandbox-xxx",
-  "session_id": "jas-session-xxx",
-  "expert_id": "expert-xxx",
-  "status": "completed",
-  "event_type": "session.completed",
-  "timestamp": "2026-06-01T00:00:00Z",
-  "session_s3_uri": "s3://fake-joinai-swarm/t1/s1/sessions/jas-session-xxx/",
-  "artifact_s3_uri": "s3://fake-joinai-swarm/t1/s1/artifacts/jas-session-xxx/",
-  "error": null,
-  "data": {}
-}
-```
-
-代理服务会话数据写入接口占位：
+占位会话数据接口：
 
 ```http
 POST /proxy/session-data
 ```
 
-占位 payload：
-
-```json
-{
-  "version": 1,
-  "tenant_id": "tenant-1",
-  "sandbox_id": "cm-sandbox-xxx",
-  "session_id": "jas-session-xxx",
-  "expert_id": "expert-xxx",
-  "messages": [],
-  "events": [],
-  "todos": [],
-  "diff": [],
-  "session_s3_uri": "s3://fake-joinai-swarm/t1/s1/sessions/jas-session-xxx/"
-}
-```
-
-## 5. 当前项目能力
-
-当前仓库已经实现：
-
-- FastAPI 服务。
-- 创建 session、生成专家团包、查询状态、关闭 session。
-- 模板 registry：生成后返回 `template_id`，供前端选择。
-- runtime session：按 `template_id` 或 `generated_package_path` 创建新 sandbox。
-- runtime query：加载生成包并执行新 query。
-- OpenCode 插件：
-  - `session-export.ts`
-  - `session-import.ts`
-  - `proxy-hooks.ts`
-- 本地状态文件：
-  - `status.json`
-  - `events.jsonl`
-  - `webhook-dead-letter.jsonl`
-  - `last-query.txt`
-  - `last-result.txt`
-- 真实 E2B/OpenCode smoke 已跑通过。
-
-当前已有 API：
-
-| 目的 | 方法 | 路径 |
-| --- | --- | --- |
-| 健康检查 | `GET` | `/health` |
-| 创建生成会话 | `POST` | `/v1/sessions` |
-| 生成专家团包 | `POST` | `/v1/sessions/{session_id}/generate` |
-| 查询生成状态 | `GET` | `/v1/sessions/{session_id}/status` |
-| 关闭生成会话 | `POST` | `/v1/sessions/{session_id}/close` |
-| 查询模板列表 | `GET` | `/v1/templates` |
-| 查询模板详情 | `GET` | `/v1/templates/{template_id}` |
-| 创建运行会话 | `POST` | `/v1/runtime-sessions` |
-| 执行运行 query | `POST` | `/v1/runtime-sessions/{runtime_session_id}/query` |
-| 查询运行状态 | `GET` | `/v1/runtime-sessions/{runtime_session_id}/status` |
-| 关闭运行会话 | `POST` | `/v1/runtime-sessions/{runtime_session_id}/close` |
-
 ## 6. 当前差距
 
-| 目标能力 | 当前状态 | 差距 |
+| 目标能力 | 当前状态 | 后续改造点 |
 | --- | --- | --- |
-| CM Sandbox 创建/启动/停止 | 使用 E2B SDK | 需要替换或新增 CM Sandbox 适配层 |
-| OpenCode Server `0.0.0.0:4096` | 使用 `opencode run` CLI | 需要启动 Server 并改为调用 Server API |
-| JAS OpenCode Server API | 未对接 docx | 需要按正式文档映射接口 |
-| CM Sandbox 上传 S3 | 未实现 | 需要封装上传专家依赖、会话、制品、模型 JSON |
-| litellm 模型 JSON | 未实现 | 需要定义模型目录、schema、加载命令 |
-| 代理协议会话数据接口 | 只有 webhook 占位 | 需要对齐正式代理协议 payload |
-| 结束/失败/打断状态 hook | 事件透传较粗 | 需要抽象标准状态并单独上报 |
-| 会话数据同步到 S3 | 当前本地导出 | 需要增加 S3 上传或 CM SDK 调用 |
-| 制品上传到 S3 | 当前保留 sandbox 路径 | 需要统一 artifacts S3 目录和上传时机 |
-| 模板持久化 | 进程内 registry + sandbox metadata | 需要 S3/数据库级模板 registry |
+| E2B 内 OpenCode 端口可访问 | 仅有 `OPENCODE_PORT` 配置 | 初始化时启动/暴露 `0.0.0.0:4096` |
+| CM Sandbox | 暂不改，仍 E2B | 未来替换 `engine/sandbox.py` |
+| S3 同步 | 当前只返回 sandbox 路径 | 增加上传 experts/sessions/artifacts/models |
+| 模型 JSON | 当前使用 env/model string | 增加模型 JSON 目录和加载流程 |
+| 代理协议 hook | 当前事件透传 | 增加标准状态和会话数据 payload |
+| 模板持久化 | 进程 registry + sandbox metadata | 后续持久化到 S3/DB |
 
-## 7. 改造方案
-
-### 7.1 Sandbox 适配层
-
-新增 CM Sandbox 适配层，保留现有 E2B 适配作为本地/测试实现。
-
-目标抽象：
-
-```text
-SandboxFactory
-  create(env, template)
-  start(sandbox_id)
-  stop(sandbox_id)
-  connect(sandbox_id)
-  upload(local_or_s3, sandbox_path)
-  download_or_upload_to_s3(sandbox_path, s3_uri)
-  expose_port(port)
-```
-
-### 7.2 OpenCode Server 启动和 API 调用
-
-将当前 `opencode run` 调用拆成：
-
-1. 初始化 workspace。
-2. 启动 OpenCode Server。
-3. 调用 Server API 创建 session。
-4. 调用 Server API 发送 query。
-5. 查询/订阅 session 状态。
-6. 支持 interrupt/close。
-
-待 `JAS OpenCode子智能体相关接口.docx` 确认后，将占位接口替换成真实接口。
-
-### 7.3 模型 JSON/litellm
-
-新增模型配置流程：
-
-1. 上游上传模型 JSON 到 S3。
-2. CM Sandbox 将模型 JSON 放到 sandbox 模型目录。
-3. OpenCode Server 启动时读取该模型配置。
-4. 会话创建时可指定模型 ID。
-
-### 7.4 会话同步和状态 Hook
-
-将当前 `proxy-hooks.ts` 从“事件透传”升级为“标准状态协议”：
-
-- `session.created` -> `created`
-- `session.status busy` -> `running`
-- `session.idle` -> `completed`
-- `session.error` -> `failed`
-- interrupt API 成功 -> `interrupted`
-- 超时 -> `timeout`
-- close API 成功 -> `closed`
-
-同时保留完整 session snapshot 导出，用于 S3 和代理服务会话数据写入。
-
-### 7.5 S3 目录统一
-
-统一四类目录：
-
-```text
-s3://fake-joinai-swarm/{tenant_id}/{sandbox_id}/experts/{expert_id}/
-s3://fake-joinai-swarm/{tenant_id}/{sandbox_id}/models/model.json
-s3://fake-joinai-swarm/{tenant_id}/{sandbox_id}/sessions/{session_id}/
-s3://fake-joinai-swarm/{tenant_id}/{sandbox_id}/artifacts/{session_id}/
-```
-
-所有返回给上游的结果都应包含对应 S3 URI。
-
-## 8. 测试与验收
+## 7. 测试
 
 本地测试：
 
@@ -512,18 +414,9 @@ python -m pytest -q
 16 passed
 ```
 
-方案验收标准：
+真实 E2B/OpenCode smoke 已验证：
 
-- 上游调用方能明确知道调用顺序、接口目的、输入输出和最终结果。
-- OpenCode Sandbox 内部研发方能明确知道需要启动什么服务、加载什么文件、写什么产物、同步到哪里。
-- 文档明确区分“当前已实现”和“目标待改造”，不把未实现能力写成已完成。
-- 所有外部文档缺失的接口均标注为占位和待确认。
-
-## 9. 待确认事项
-
-- CM Sandbox SDK 正式接口名、鉴权、端口暴露和 S3 上传方式。
-- OpenCode Server API 正式路径、请求体、响应体和鉴权方式。
-- `opencode-dev/` 的启动命令、配置路径和模型加载方式。
-- litellm 模型 JSON 正式 schema。
-- 代理服务会话数据写入接口和状态写入接口的正式 payload。
-- S3 bucket、租户 ID、sandbox ID、expert ID、session ID 的命名规则。
+- 生成专家包：`validated`
+- runtime 导入模板：`ready`
+- runtime query：`validated`
+- template picker 通过 `template_id` 创建 runtime 并执行 query
