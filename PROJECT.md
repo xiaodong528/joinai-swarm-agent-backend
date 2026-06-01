@@ -30,11 +30,11 @@ s3://fake-joinai-swarm/{tenant_id}/{sandbox_id}/artifacts/{session_id}/
 
 ```mermaid
 flowchart LR
-    IN[输入<br/>生成 query<br/>template_id<br/>运行 query] --> API[Swarm Engine API]
+    IN["输入<br>生成 query<br>template_id<br>运行 query"] --> API["Swarm Engine API"]
     API --> DEV[开发态生成专家包]
-    DEV --> TPL[模板输出<br/>template_id<br/>generated_package_path]
+    DEV --> TPL["模板输出<br>template_id<br>generated_package_path"]
     TPL --> RUN[运行态加载模板]
-    RUN --> OUT[输出<br/>运行结果<br/>events/session-export<br/>后续 S3/代理状态]
+    RUN --> OUT["输出<br>运行结果<br>events/session-export<br>后续 S3/代理状态"]
 ```
 
 ## 目标
@@ -86,26 +86,26 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    FE[前端/外部服务] -->|POST /v1/sessions| API[FastAPI Swarm Engine]
-    FE -->|POST /v1/sessions/{id}/generate| API
+    FE["前端/外部服务"] -->|POST /v1/sessions| API["FastAPI Swarm Engine"]
+    FE -->|POST /v1/sessions/:session_id/generate| API
     FE -->|GET /v1/templates| API
     FE -->|POST /v1/runtime-sessions| API
-    FE -->|POST /v1/runtime-sessions/{id}/query| API
+    FE -->|POST /v1/runtime-sessions/:runtime_session_id/query| API
 
-    API --> GEN[创建引擎 AgentEngineService]
-    API --> REG[模板 Registry]
-    API --> RUN[运行引擎 Runtime Session]
+    API --> GEN["创建引擎 AgentEngineService"]
+    API --> REG["模板 Registry"]
+    API --> RUN["运行引擎 Runtime Session"]
 
-    GEN -->|create| GSBOX[E2B OpenCode 生成 Sandbox]
-    GSBOX --> TMPL[/home/user/template<br/>专家团管理模板/]
-    TMPL --> PLUGINS[session-export.ts<br/>session-import.ts<br/>proxy-hooks.ts]
+    GEN -->|create| GSBOX["E2B OpenCode 生成 Sandbox"]
+    GSBOX --> TMPL["/home/user/template<br>专家团管理模板"]
+    TMPL --> PLUGINS["session-export.ts<br>session-import.ts<br>proxy-hooks.ts"]
     GEN -->|opencode run --agent expert-team-manager| TMPL
-    TMPL --> PKG[生成 OpenCode 专家团包<br/>generated_package_path]
+    TMPL --> PKG["生成 OpenCode 专家团包<br>generated_package_path"]
     GEN -->|validate_expert_team.py| PKG
     GEN -->|登记 template_id| REG
-    REG --> META[template-&lt;template_id&gt;.json<br/>模板元数据]
+    REG --> META["template-&lt;template_id&gt;.json<br>模板元数据"]
 
-    RUN -->|create| RSBOX[E2B OpenCode 运行 Sandbox]
+    RUN -->|create| RSBOX["E2B OpenCode 运行 Sandbox"]
     RUN -->|按 template_id 找源包| REG
     PKG -->|tar + base64| RSBOX
     RSBOX --> RPKG[/home/user/template/.runtime-sessions/&lt;runtime_session_id&gt;/package/]
@@ -113,9 +113,9 @@ flowchart TD
     RUN -->|识别 mode: primary agent| RPKG
     RUN -->|opencode run --agent &lt;primary&gt;| RPKG
 
-    RPKG --> RSTATE[runtime state.json<br/>events.jsonl<br/>last-result.txt]
-    TMPL --> GSTATE[generation state.json<br/>events.jsonl<br/>last-result.txt]
-    PLUGINS --> WEBHOOK[外部 webhook/status webhook]
+    RPKG --> RSTATE["runtime state.json<br>events.jsonl<br>last-result.txt"]
+    TMPL --> GSTATE["generation state.json<br>events.jsonl<br>last-result.txt"]
+    PLUGINS --> WEBHOOK["外部 webhook/status webhook"]
     RPKG --> WEBHOOK
 ```
 

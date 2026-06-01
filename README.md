@@ -30,12 +30,12 @@
 
 ```mermaid
 flowchart LR
-    IN[输入<br/>用户需求 query<br/>已生成模板 template_id<br/>可选 webhook/status_url] --> API[Swarm Engine API]
-    API --> DEV[专家开发态<br/>生成/校验专家包]
-    DEV --> TPL[模板输出<br/>template_id<br/>generated_package_path<br/>template metadata]
-    TPL --> RUN[专家运行态<br/>加载模板并执行新 query]
-    RUN --> OUT[运行输出<br/>runtime_session_id<br/>last_result.txt<br/>events.jsonl<br/>session-export/]
-    OUT -.后续同步.-> EXT[外部结果<br/>S3 路径<br/>代理服务状态/会话数据]
+    IN["输入<br>用户需求 query<br>已生成模板 template_id<br>可选 webhook/status_url"] --> API["Swarm Engine API"]
+    API --> DEV["专家开发态<br>生成/校验专家包"]
+    DEV --> TPL["模板输出<br>template_id<br>generated_package_path<br>template metadata"]
+    TPL --> RUN["专家运行态<br>加载模板并执行新 query"]
+    RUN --> OUT["运行输出<br>runtime_session_id<br>last_result.txt<br>events.jsonl<br>session-export/"]
+    OUT -.后续同步.-> EXT["外部结果<br>S3 路径<br>代理服务状态/会话数据"]
 ```
 
 输入分三类：
@@ -56,42 +56,42 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    UP[上游调用方 / 亚信 / 前端] --> API[Swarm Engine API]
+    UP["上游调用方 / 亚信 / 前端"] --> API["Swarm Engine API"]
 
-    API --> CREATE[创建引擎接口<br/>/v1/sessions<br/>/v1/sessions/{id}/generate]
-    API --> TEMPLATE[模板选择接口<br/>/v1/templates]
-    API --> RUNTIME[运行引擎接口<br/>/v1/runtime-sessions<br/>/v1/runtime-sessions/{id}/query]
+    API --> CREATE["创建引擎接口<br>/v1/sessions<br>/v1/sessions/:session_id/generate"]
+    API --> TEMPLATE["模板选择接口<br>/v1/templates"]
+    API --> RUNTIME["运行引擎接口<br>/v1/runtime-sessions<br>/v1/runtime-sessions/:runtime_session_id/query"]
 
-    CREATE --> GENBOX[E2B OpenCode Sandbox<br/>开发态 Sandbox]
-    GENBOX --> MANAGER[专家团管理模板<br/>expert-team-manager]
+    CREATE --> GENBOX["E2B OpenCode Sandbox<br>开发态 Sandbox"]
+    GENBOX --> MANAGER["专家团管理模板<br>expert-team-manager"]
     MANAGER -->|opencode run| BUILD[生成专家包]
-    BUILD --> VALIDATE[校验专家包<br/>validate_expert_team.py]
-    VALIDATE --> PACKAGE[专家模板/专家包输出<br/>generated_package_path]
-    PACKAGE --> TEMPLATE_META[模板元数据<br/>template_id<br/>template-xxx.json]
+    BUILD --> VALIDATE["校验专家包<br>validate_expert_team.py"]
+    VALIDATE --> PACKAGE["专家模板/专家包输出<br>generated_package_path"]
+    PACKAGE --> TEMPLATE_META["模板元数据<br>template_id<br>template-xxx.json"]
 
     TEMPLATE --> TEMPLATE_META
     TEMPLATE_META --> RUNTIME
 
-    RUNTIME --> RUNBOX[E2B OpenCode Sandbox<br/>运行态 Sandbox]
+    RUNTIME --> RUNBOX["E2B OpenCode Sandbox<br>运行态 Sandbox"]
     PACKAGE -->|tar/base64 导入| RUNBOX
-    RUNBOX --> RUNTIME_PACKAGE[运行态专家包目录<br/>.runtime-sessions/{id}/package]
+    RUNBOX --> RUNTIME_PACKAGE["运行态专家包目录<br>.runtime-sessions/:runtime_session_id/package"]
     RUNTIME_PACKAGE --> PRIMARY[识别 primary agent]
     PRIMARY -->|opencode run --agent primary| QUERY_RUN[执行用户新 query]
-    QUERY_RUN --> RESULT[运行结果<br/>last-result.txt<br/>stdout/stderr]
+    QUERY_RUN --> RESULT["运行结果<br>last-result.txt<br>stdout/stderr"]
 
-    GENBOX --> GEN_PLUGIN[开发态插件<br/>session-export<br/>proxy-hooks]
-    RUNBOX --> RUN_PLUGIN[运行态插件<br/>session-export<br/>proxy-hooks]
+    GENBOX --> GEN_PLUGIN["开发态插件<br>session-export<br>proxy-hooks"]
+    RUNBOX --> RUN_PLUGIN["运行态插件<br>session-export<br>proxy-hooks"]
 
-    GEN_PLUGIN --> GEN_STATE[开发态状态/事件<br/>status.json<br/>events.jsonl<br/>session-export/]
-    RUN_PLUGIN --> RUN_STATE[运行态状态/事件<br/>status.json<br/>events.jsonl<br/>session-export/]
+    GEN_PLUGIN --> GEN_STATE["开发态状态/事件<br>status.json<br>events.jsonl<br>session-export/"]
+    RUN_PLUGIN --> RUN_STATE["运行态状态/事件<br>status.json<br>events.jsonl<br>session-export/"]
 
     PACKAGE -.后续同步.-> S3_EXPERT[(S3 专家依赖/模板目录)]
     RESULT -.后续同步.-> S3_ARTIFACT[(S3 制品目录)]
     GEN_STATE -.后续同步.-> S3_SESSION[(S3 会话数据目录)]
     RUN_STATE -.后续同步.-> S3_SESSION
-    RUN_STATE -.后续上报.-> PROXY[代理服务<br/>会话状态/会话数据接口]
+    RUN_STATE -.后续上报.-> PROXY["代理服务<br>会话状态/会话数据接口"]
 
-    GENBOX -.可选暴露.-> PORT[OpenCode 访问端口<br/>0.0.0.0:4096]
+    GENBOX -.可选暴露.-> PORT["OpenCode 访问端口<br>0.0.0.0:4096"]
     RUNBOX -.可选暴露.-> PORT
 ```
 
@@ -99,20 +99,20 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    UP[上游调用方/亚信] --> API[Swarm Engine FastAPI]
+    UP["上游调用方/亚信"] --> API["Swarm Engine FastAPI"]
 
-    API --> GEN[创建引擎<br/>Generation Session]
-    API --> REG[模板 Registry<br/>template_id]
-    API --> RUN[运行引擎<br/>Runtime Session]
+    API --> GEN["创建引擎<br>Generation Session"]
+    API --> REG["模板 Registry<br>template_id"]
+    API --> RUN["运行引擎<br>Runtime Session"]
 
-    GEN -->|create/connect| E2BG[E2B OpenCode Sandbox<br/>开发态]
+    GEN -->|create/connect| E2BG["E2B OpenCode Sandbox<br>开发态"]
     E2BG --> TMPL[/专家团管理模板/]
-    TMPL -->|opencode run --agent expert-team-manager| PKG[生成专家包<br/>generated_package_path]
+    TMPL -->|opencode run --agent expert-team-manager| PKG["生成专家包<br>generated_package_path"]
     PKG -->|validate_expert_team.py| REG
 
     UP -->|GET /v1/templates| REG
     UP -->|选择 template_id| RUN
-    RUN -->|create/connect| E2BR[E2B OpenCode Sandbox<br/>运行态]
+    RUN -->|create/connect| E2BR["E2B OpenCode Sandbox<br>运行态"]
     PKG -->|tar/base64 导入| E2BR
     E2BR --> RPKG[/runtime package/]
     RPKG -->|opencode run --agent primary| RESULT[运行结果]
