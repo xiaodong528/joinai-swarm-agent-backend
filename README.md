@@ -52,6 +52,49 @@ flowchart LR
 
 ## 3. 详细架构图
 
+下面先给出按模块分层的流程图，便于对方案时从上游调用、创建态、模板选择、运行态、外部输出几个区域快速看清链路。
+
+```mermaid
+flowchart TD
+    UP[上游调用方 / 亚信 / 前端] --> API[Swarm Engine API]
+
+    API --> CREATE[创建引擎接口<br/>/v1/sessions<br/>/v1/sessions/{id}/generate]
+    API --> TEMPLATE[模板选择接口<br/>/v1/templates]
+    API --> RUNTIME[运行引擎接口<br/>/v1/runtime-sessions<br/>/v1/runtime-sessions/{id}/query]
+
+    CREATE --> GENBOX[E2B OpenCode Sandbox<br/>开发态 Sandbox]
+    GENBOX --> MANAGER[专家团管理模板<br/>expert-team-manager]
+    MANAGER -->|opencode run| BUILD[生成专家包]
+    BUILD --> VALIDATE[校验专家包<br/>validate_expert_team.py]
+    VALIDATE --> PACKAGE[专家模板/专家包输出<br/>generated_package_path]
+    PACKAGE --> TEMPLATE_META[模板元数据<br/>template_id<br/>template-xxx.json]
+
+    TEMPLATE --> TEMPLATE_META
+    TEMPLATE_META --> RUNTIME
+
+    RUNTIME --> RUNBOX[E2B OpenCode Sandbox<br/>运行态 Sandbox]
+    PACKAGE -->|tar/base64 导入| RUNBOX
+    RUNBOX --> RUNTIME_PACKAGE[运行态专家包目录<br/>.runtime-sessions/{id}/package]
+    RUNTIME_PACKAGE --> PRIMARY[识别 primary agent]
+    PRIMARY -->|opencode run --agent primary| QUERY_RUN[执行用户新 query]
+    QUERY_RUN --> RESULT[运行结果<br/>last-result.txt<br/>stdout/stderr]
+
+    GENBOX --> GEN_PLUGIN[开发态插件<br/>session-export<br/>proxy-hooks]
+    RUNBOX --> RUN_PLUGIN[运行态插件<br/>session-export<br/>proxy-hooks]
+
+    GEN_PLUGIN --> GEN_STATE[开发态状态/事件<br/>status.json<br/>events.jsonl<br/>session-export/]
+    RUN_PLUGIN --> RUN_STATE[运行态状态/事件<br/>status.json<br/>events.jsonl<br/>session-export/]
+
+    PACKAGE -.后续同步.-> S3_EXPERT[(S3 专家依赖/模板目录)]
+    RESULT -.后续同步.-> S3_ARTIFACT[(S3 制品目录)]
+    GEN_STATE -.后续同步.-> S3_SESSION[(S3 会话数据目录)]
+    RUN_STATE -.后续同步.-> S3_SESSION
+    RUN_STATE -.后续上报.-> PROXY[代理服务<br/>会话状态/会话数据接口]
+
+    GENBOX -.可选暴露.-> PORT[OpenCode 访问端口<br/>0.0.0.0:4096]
+    RUNBOX -.可选暴露.-> PORT
+```
+
 下面保留完整架构图，展示每一块内部如何衔接。
 
 ```mermaid
