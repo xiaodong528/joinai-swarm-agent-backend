@@ -24,7 +24,35 @@
 - 会话状态和事件文件。
 - 后续可同步到 S3 的专家依赖、会话数据、制品产物路径。
 
-## 2. 总体架构
+## 2. 输入输出总览
+
+先看整体输入和输出，便于对方案时快速确认边界。
+
+```mermaid
+flowchart LR
+    IN[输入<br/>用户需求 query<br/>已生成模板 template_id<br/>可选 webhook/status_url] --> API[Swarm Engine API]
+    API --> DEV[专家开发态<br/>生成/校验专家包]
+    DEV --> TPL[模板输出<br/>template_id<br/>generated_package_path<br/>template metadata]
+    TPL --> RUN[专家运行态<br/>加载模板并执行新 query]
+    RUN --> OUT[运行输出<br/>runtime_session_id<br/>last_result.txt<br/>events.jsonl<br/>session-export/]
+    OUT -.后续同步.-> EXT[外部结果<br/>S3 路径<br/>代理服务状态/会话数据]
+```
+
+输入分三类：
+
+- **开发态输入**：用户生成需求 `query`、可选 `output_root`、可选 `output_slug`。
+- **运行态输入**：前端选择的 `template_id`、新 query、可选 agent。
+- **集成输入**：可选 webhook/status_url；后续预留模型 JSON、S3 目录、代理协议配置。
+
+输出分三类：
+
+- **模板输出**：`template_id`、`generated_package_path`、模板元数据文件。
+- **运行输出**：`runtime_session_id`、runtime package 路径、执行结果、事件和会话导出。
+- **外部同步输出**：后续可同步到 S3 的专家依赖、会话数据、制品产物，以及代理服务状态/会话数据。
+
+## 3. 详细架构图
+
+下面保留完整架构图，展示每一块内部如何衔接。
 
 ```mermaid
 flowchart TD
@@ -54,9 +82,9 @@ flowchart TD
     RESULT -.后续预留.-> PROXY[代理服务状态/会话接口]
 ```
 
-## 3. 上游调用方接口
+## 4. 上游调用方接口
 
-### 3.1 创建开发态 Sandbox
+### 4.1 创建开发态 Sandbox
 
 当前接口：
 
@@ -95,7 +123,7 @@ POST /v1/sessions
 - 如果未来切 CM Sandbox，这里替换 sandbox factory 即可。
 - 如果需要暴露 E2B 内 OpenCode 服务，可在 sandbox 初始化后启动监听 `0.0.0.0:4096` 的 opencode 服务，并把访问地址写入 `data.opencode_endpoint`。
 
-### 3.2 生成专家模板/专家包
+### 4.2 生成专家模板/专家包
 
 当前接口：
 
@@ -133,7 +161,7 @@ opencode run --agent expert-team-manager <prompt>
 /home/user/template/.engine-sessions/<session_id>/state/template-<template_id>.json
 ```
 
-### 3.3 查询模板列表
+### 4.3 查询模板列表
 
 当前接口：
 
@@ -157,7 +185,7 @@ GET /v1/templates?user_id=user-1
 - `status`
 - `created_at`
 
-### 3.4 创建运行态 Sandbox
+### 4.4 创建运行态 Sandbox
 
 当前接口：
 
@@ -199,7 +227,7 @@ POST /v1/runtime-sessions
 - `runtime_package_path`
 - `data.primary_agent`
 
-### 3.5 执行运行态 Query
+### 4.5 执行运行态 Query
 
 当前接口：
 
@@ -237,7 +265,7 @@ opencode run --agent <primary-agent> <query>
 - `data.last_stderr`
 - `data.last_result_path`
 
-### 3.6 查询和关闭
+### 4.6 查询和关闭
 
 生成态：
 
@@ -253,9 +281,9 @@ GET /v1/runtime-sessions/{runtime_session_id}/status?user_id=user-1
 POST /v1/runtime-sessions/{runtime_session_id}/close
 ```
 
-## 4. E2B OpenCode Sandbox 内部内容
+## 5. E2B OpenCode Sandbox 内部内容
 
-### 4.1 开发态目录
+### 5.1 开发态目录
 
 ```text
 /home/user/template/
@@ -271,7 +299,7 @@ POST /v1/runtime-sessions/{runtime_session_id}/close
 └── exports/
 ```
 
-### 4.2 运行态目录
+### 5.2 运行态目录
 
 ```text
 /home/user/template/.runtime-sessions/<runtime_session_id>/
@@ -290,7 +318,7 @@ POST /v1/runtime-sessions/{runtime_session_id}/close
     └── source-package.tar.gz.b64
 ```
 
-### 4.3 插件
+### 5.3 插件
 
 当前注入：
 
@@ -308,9 +336,9 @@ POST /v1/runtime-sessions/{runtime_session_id}/close
 
 注意：当前 hook 会记录中间消息、message parts、工具调用输入输出、diff、todo、错误信息。若上游只需要状态，需要在 hook 层增加过滤或标准状态映射。
 
-## 5. 后续预留位置
+## 6. 后续预留位置
 
-### 5.1 Sandbox 管理
+### 6.1 Sandbox 管理
 
 当前：
 
@@ -320,7 +348,7 @@ POST /v1/runtime-sessions/{runtime_session_id}/close
 
 未来如果改 CM Sandbox，优先替换这一层，不改业务服务层。
 
-### 5.2 OpenCode 可访问端口
+### 6.2 OpenCode 可访问端口
 
 当前：
 
@@ -333,7 +361,7 @@ POST /v1/runtime-sessions/{runtime_session_id}/close
 - 将 `opencode_endpoint` 写入 session/runtime response 的 `data`。
 - 该服务只用于外部访问 E2B 内 opencode，不改变当前 `opencode run` 主执行逻辑。
 
-### 5.3 S3 占位目录
+### 6.3 S3 占位目录
 
 当前不做真实上传，只保留路径约定：
 
@@ -346,7 +374,7 @@ s3://fake-joinai-swarm/{tenant_id}/{sandbox_id}/artifacts/{session_id}/
 
 后续可在生成完成、runtime query 完成、session-export 完成后触发上传。
 
-### 5.4 模型 JSON
+### 6.4 模型 JSON
 
 当前：
 
@@ -359,7 +387,7 @@ s3://fake-joinai-swarm/{tenant_id}/{sandbox_id}/artifacts/{session_id}/
 - 在 opencode 启动或执行时读取模型 JSON。
 - 与 litellm schema 对齐。
 
-### 5.5 代理协议 Hook
+### 6.5 代理协议 Hook
 
 当前：
 
@@ -389,7 +417,7 @@ POST /proxy/session-status
 POST /proxy/session-data
 ```
 
-## 6. 当前差距
+## 7. 当前差距
 
 | 目标能力 | 当前状态 | 后续改造点 |
 | --- | --- | --- |
@@ -400,7 +428,7 @@ POST /proxy/session-data
 | 代理协议 hook | 当前事件透传 | 增加标准状态和会话数据 payload |
 | 模板持久化 | 进程 registry + sandbox metadata | 后续持久化到 S3/DB |
 
-## 7. 测试
+## 8. 测试
 
 本地测试：
 

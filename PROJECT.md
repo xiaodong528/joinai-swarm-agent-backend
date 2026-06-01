@@ -26,6 +26,17 @@ s3://fake-joinai-swarm/{tenant_id}/{sandbox_id}/sessions/{session_id}/
 s3://fake-joinai-swarm/{tenant_id}/{sandbox_id}/artifacts/{session_id}/
 ```
 
+方案对齐时优先看输入输出总览：
+
+```mermaid
+flowchart LR
+    IN[输入<br/>生成 query<br/>template_id<br/>运行 query] --> API[Swarm Engine API]
+    API --> DEV[开发态生成专家包]
+    DEV --> TPL[模板输出<br/>template_id<br/>generated_package_path]
+    TPL --> RUN[运行态加载模板]
+    RUN --> OUT[输出<br/>运行结果<br/>events/session-export<br/>后续 S3/代理状态]
+```
+
 ## 目标
 
 本项目实现一个多用户 E2B OpenCode Agent 模板生成引擎。
