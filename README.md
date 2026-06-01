@@ -50,7 +50,38 @@ flowchart LR
 - **运行输出**：`runtime_session_id`、runtime package 路径、执行结果、事件和会话导出。
 - **外部同步输出**：后续可同步到 S3 的专家依赖、会话数据、制品产物，以及代理服务状态/会话数据。
 
-## 3. 详细架构图
+## 3. 开发态/运行态接口交互图
+
+这张图只抽象接口和外部交互，不展开 sandbox 内部实现细节。
+
+```mermaid
+flowchart LR
+    UP["上游调用方 / 亚信 / 前端"]
+
+    UP -->|创建/关闭| SESSION_API["Sandbox 会话管理接口<br>POST /v1/sessions<br>POST /v1/sessions/:session_id/close"]
+    UP -->|生成专家模板| DEV_API["开发态接口<br>POST /v1/sessions/:session_id/generate"]
+    UP -->|选择模板| TEMPLATE_API["模板接口<br>GET /v1/templates<br>GET /v1/templates/:template_id"]
+    UP -->|创建运行态/执行 query| RUNTIME_API["运行态接口<br>POST /v1/runtime-sessions<br>POST /v1/runtime-sessions/:runtime_session_id/query"]
+
+    SESSION_API --> DEV_BOX["E2B OpenCode Sandbox<br>开发态"]
+    DEV_API --> DEV_BOX
+    DEV_BOX --> TEMPLATE_STORE["模板/专家包输出<br>template_id<br>generated_package_path"]
+
+    TEMPLATE_API --> TEMPLATE_STORE
+    TEMPLATE_STORE --> RUNTIME_API
+    RUNTIME_API --> RUN_BOX["E2B OpenCode Sandbox<br>运行态"]
+
+    DEV_BOX --> SYNC["会话同步 / Hook<br>events<br>session export<br>status"]
+    RUN_BOX --> SYNC
+
+    SYNC -.后续同步.-> S3["S3 目录<br>experts / sessions / artifacts / models"]
+    SYNC -.后续上报.-> PROXY["代理服务接口<br>会话状态<br>会话数据"]
+
+    DEV_BOX -.可选访问.-> PORT["OpenCode 访问端口<br>0.0.0.0:4096"]
+    RUN_BOX -.可选访问.-> PORT
+```
+
+## 4. 详细架构图
 
 下面先给出按模块分层的流程图，便于对方案时从上游调用、创建态、模板选择、运行态、外部输出几个区域快速看清链路。
 
@@ -125,9 +156,9 @@ flowchart TD
     RESULT -.后续预留.-> PROXY[代理服务状态/会话接口]
 ```
 
-## 4. 上游调用方接口
+## 5. 上游调用方接口
 
-### 4.1 创建开发态 Sandbox
+### 5.1 创建开发态 Sandbox
 
 当前接口：
 
@@ -166,7 +197,7 @@ POST /v1/sessions
 - 如果未来切 CM Sandbox，这里替换 sandbox factory 即可。
 - 如果需要暴露 E2B 内 OpenCode 服务，可在 sandbox 初始化后启动监听 `0.0.0.0:4096` 的 opencode 服务，并把访问地址写入 `data.opencode_endpoint`。
 
-### 4.2 生成专家模板/专家包
+### 5.2 生成专家模板/专家包
 
 当前接口：
 
@@ -204,7 +235,7 @@ opencode run --agent expert-team-manager <prompt>
 /home/user/template/.engine-sessions/<session_id>/state/template-<template_id>.json
 ```
 
-### 4.3 查询模板列表
+### 5.3 查询模板列表
 
 当前接口：
 
@@ -228,7 +259,7 @@ GET /v1/templates?user_id=user-1
 - `status`
 - `created_at`
 
-### 4.4 创建运行态 Sandbox
+### 5.4 创建运行态 Sandbox
 
 当前接口：
 
@@ -270,7 +301,7 @@ POST /v1/runtime-sessions
 - `runtime_package_path`
 - `data.primary_agent`
 
-### 4.5 执行运行态 Query
+### 5.5 执行运行态 Query
 
 当前接口：
 
@@ -308,7 +339,7 @@ opencode run --agent <primary-agent> <query>
 - `data.last_stderr`
 - `data.last_result_path`
 
-### 4.6 查询和关闭
+### 5.6 查询和关闭
 
 生成态：
 
@@ -324,9 +355,9 @@ GET /v1/runtime-sessions/{runtime_session_id}/status?user_id=user-1
 POST /v1/runtime-sessions/{runtime_session_id}/close
 ```
 
-## 5. E2B OpenCode Sandbox 内部内容
+## 6. E2B OpenCode Sandbox 内部内容
 
-### 5.1 开发态目录
+### 6.1 开发态目录
 
 ```text
 /home/user/template/
@@ -342,7 +373,7 @@ POST /v1/runtime-sessions/{runtime_session_id}/close
 └── exports/
 ```
 
-### 5.2 运行态目录
+### 6.2 运行态目录
 
 ```text
 /home/user/template/.runtime-sessions/<runtime_session_id>/
@@ -361,7 +392,7 @@ POST /v1/runtime-sessions/{runtime_session_id}/close
     └── source-package.tar.gz.b64
 ```
 
-### 5.3 插件
+### 6.3 插件
 
 当前注入：
 
@@ -379,9 +410,9 @@ POST /v1/runtime-sessions/{runtime_session_id}/close
 
 注意：当前 hook 会记录中间消息、message parts、工具调用输入输出、diff、todo、错误信息。若上游只需要状态，需要在 hook 层增加过滤或标准状态映射。
 
-## 6. 后续预留位置
+## 7. 后续预留位置
 
-### 6.1 Sandbox 管理
+### 7.1 Sandbox 管理
 
 当前：
 
@@ -391,7 +422,7 @@ POST /v1/runtime-sessions/{runtime_session_id}/close
 
 未来如果改 CM Sandbox，优先替换这一层，不改业务服务层。
 
-### 6.2 OpenCode 可访问端口
+### 7.2 OpenCode 可访问端口
 
 当前：
 
@@ -404,7 +435,7 @@ POST /v1/runtime-sessions/{runtime_session_id}/close
 - 将 `opencode_endpoint` 写入 session/runtime response 的 `data`。
 - 该服务只用于外部访问 E2B 内 opencode，不改变当前 `opencode run` 主执行逻辑。
 
-### 6.3 S3 占位目录
+### 7.3 S3 占位目录
 
 当前不做真实上传，只保留路径约定：
 
@@ -417,7 +448,7 @@ s3://fake-joinai-swarm/{tenant_id}/{sandbox_id}/artifacts/{session_id}/
 
 后续可在生成完成、runtime query 完成、session-export 完成后触发上传。
 
-### 6.4 模型 JSON
+### 7.4 模型 JSON
 
 当前：
 
@@ -430,7 +461,7 @@ s3://fake-joinai-swarm/{tenant_id}/{sandbox_id}/artifacts/{session_id}/
 - 在 opencode 启动或执行时读取模型 JSON。
 - 与 litellm schema 对齐。
 
-### 6.5 代理协议 Hook
+### 7.5 代理协议 Hook
 
 当前：
 
@@ -460,7 +491,7 @@ POST /proxy/session-status
 POST /proxy/session-data
 ```
 
-## 7. 当前差距
+## 8. 当前差距
 
 | 目标能力 | 当前状态 | 后续改造点 |
 | --- | --- | --- |
@@ -471,7 +502,7 @@ POST /proxy/session-data
 | 代理协议 hook | 当前事件透传 | 增加标准状态和会话数据 payload |
 | 模板持久化 | 进程 registry + sandbox metadata | 后续持久化到 S3/DB |
 
-## 8. 测试
+## 9. 测试
 
 本地测试：
 
